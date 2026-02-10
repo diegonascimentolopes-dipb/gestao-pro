@@ -2,20 +2,22 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# 1. Configuração de Página e Estilo para Navegação Superior
+# 1. Configuração de Página
 st.set_page_config(page_title="Gestão Pro v4.2", layout="wide")
 
-# CSS para esconder a barra lateral e estilizar botões superiores
+# 2. Estilização CSS Corrigida
 st.markdown("""
-    <style>
-        [data-testid="stSidebar"] {display: none;}
-        .main-nav {display: flex; gap: 10px; margin-bottom: 20px;}
-    </style>
+<style>
+    /* Remove a barra lateral */
+    [data-testid="stSidebar"] {display: none;}
+    /* Ajusta o espaçamento do topo */
+    .block-container {padding-top: 2rem;}
+</style>
 """, unsafe_content_html=True)
 
 st.title("🚀 Gestão Pro v4.2")
 
-# 2. Navegação por abas na parte superior
+# 3. Navegação por abas (Menu Superior)
 tabs = st.tabs(["📊 Dashboard", "👤 Meus Clientes", "🔐 Admin"])
 
 with tabs[0]:
@@ -24,7 +26,8 @@ with tabs[0]:
 
 with tabs[1]:
     st.header("Meus Clientes")
-    operador = st.selectbox("Selecione seu nome:", ["Aguardando Importação..."])
+    st.write("Selecione seu nome para visualizar sua carteira.")
+    operador = st.selectbox("Operador Atual:", ["Aguardando Importação..."], label_visibility="collapsed")
     st.warning("Nenhum dado vinculado ao seu operador ainda.")
 
 with tabs[2]:
@@ -34,8 +37,9 @@ with tabs[2]:
     if senha == "admin123":
         st.success("Acesso Liberado!")
         st.subheader("Configurações do Gestor")
-        # Espaço para o Motor de Importação da Missão 02
-        st.button("Limpar Base de Dados (Reset)")
+        # Botão de Reset (estaremos salvando dados em Missões futuras)
+        if st.button("Limpar Base de Dados (Reset)"):
+            st.warning("Função de limpeza será ativada na Missão 02.")
     elif senha != "":
         st.error("Senha incorreta.")
 
