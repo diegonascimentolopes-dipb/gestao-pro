@@ -2,124 +2,160 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 import re
-import numpy as np
 
-# 1. Configuração e Estado
+# 1. CONFIGURAÇÃO E ESTILO (CSS)
 st.set_page_config(page_title="Gestão Pro v4.2", layout="wide", initial_sidebar_state="collapsed")
 
+st.markdown("""
+<style>
+    [data-testid="stSidebar"] {display: none;}
+    .main-title {text-align: center; color: #1E3A8A; font-weight: bold; margin-bottom: 20px;}
+    .stTabs [data-baseweb="tab-list"] {gap: 10px; justify-content: center;}
+    .stTabs [data-baseweb="tab"] {background-color: #f1f5f9; border-radius: 5px; padding: 10px 20px;}
+    .stTabs [aria-selected="true"] {background-color: #1E3A8A !important; color: white !important;}
+</style>
+""", unsafe_content_html=True)
+
+# 2. INICIALIZAÇÃO DO BANCO (SESSION STATE)
 if 'clientes' not in st.session_state:
-    st.session_state.clientes = pd.DataFrame(columns=['Cliente', 'CNJ', 'Operador', 'Status', 'Last_Touch', 'Retorno'])
+    st.session_state.clientes = pd.DataFrame(columns=['id', 'Cliente', 'CNJ', 'Operador', 'Status', 'Ultimo_Contato', 'Data_Retorno'])
 
 if 'operadores' not in st.session_state:
-    st.session_state.operadores = ["Operador Padrão"]
+    st.session_state.operadores = ["Diego", "Samara", "Natan"]
 
-# --- FUNÇÕES CORE ---
+# 3. FUNÇÕES DE SUPORTE
+def normalizar_nome(texto):
+    return re.sub(r'[^a-zA-Z0-9]', '', str(texto)).upper()
 
 def aplicar_mascara_cnj(texto):
     padrao = r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}'
     resultado = re.findall(padrao, texto)
-    return resultado[0] if resultado else "0000000-00.0000.0.00.0000"
-
-def girar_carteira():
-    if st.session_state.clientes.empty or len(st.session_state.operadores) == 0:
-        return
-    
-    df = st.session_state.clientes.copy()
-    ops = st.session_state.operadores.copy()
-    
-    # Shuffle (Embaralhamento)
-    df = df.sample(frac=1).reset_index(drop=True)
-    
-    # Distribuição Equitativa
-    n_ops = len(ops)
-    for i in range(len(df)):
-        df.at[i, 'Operador'] = ops[i % n_ops]
-    
-    st.session_state.clientes = df
-    st.success("🔄 Giro de Carteira concluído com sucesso!")
+    return resultado[0] if resultado else "Sem Processo"
 
 def colorir_tabela(val):
-    hoje = date.today()
     try:
-        data_ret = datetime.strptime(val, '%Y-%m-%d').date()
-        if data_ret < hoje:
-            return 'background-color: #fee2e2; color: #991b1b' # Vermelho (Atrasado)
-        elif data_ret == hoje:
-            return 'background-color: #fef9c3; color: #854d0e' # Amarelo (Hoje)
-        else:
-            return 'background-color: #dcfce7; color: #166534' # Verde (Agendado)
-    except:
-        return ''
+        data_ret = datetime.strptime(val, '%d/%m/%Y').date()
+        hoje = date.today()
+        if data_ret < hoje: return 'background-color: #fee2e2; color: #991b1b' # Atrasado
+        if data_ret == hoje: return 'background-color: #fef9c3; color: #854d0e' # Hoje
+        return 'background-color: #dcfce7; color: #166534' # Agendado
+    except: return ''
 
-# --- INTERFACE ---
+# 4. INTERFACE PRINCIPAL
+st.markdown("<h1 class='main-title'>🚀 Gestão Pro v4.2</h1>", unsafe_content_html=True)
+tabs = st.tabs(["📊 DASHBOARD", "👤 MEUS CLIENTES", "🛠️ ADMINISTRAÇÃO"])
 
-st.title("🚀 Gestão Pro v4.2")
-
-tabs = st.tabs(["📊 Dashboard", "👤 Meus Clientes", "🔐 Admin"])
-
+# --- ABA 1: DASHBOARD (SOMENTE INFORMAÇÕES) ---
 with tabs[0]:
-    st.header("Resumo Estratégico")
+    st.subheader("Resumo da Carteira")
+    df = st.session_state.clientes
+    col1, col2, col3, col4 = st.columns(4)
     
-    if not st.session_state.clientes.empty:
-        # Cálculo de Inatividade
-        df_view = st.session_state.clientes.copy()
-        # Aplicar estilização visual
-        st.write("### Carteira Geral (Monitoramento de Prazos)")
-        st.dataframe(df_view.style.applymap(colorir_tabela, subset=['Retorno']), use_container_width=True)
-    else:
-        st.info("Nenhum dado disponível. Vá para a aba Admin para importar.")
+    col1.metric("Total Clientes", len(df))
+    col2.metric("Atribuídos", len(df[df['Operador'] != 'Não Atribuído']))
+    
+    if not df.empty:
+        # Converter string para data para contagem
+        df['dt_temp'] = pd.to_datetime(df['Data_Retorno'], format='%d/%m/%Y').dt.date
+        atrasados = len(df[df['dt_temp'] < date.today()])
+        hoje = len(df[df['dt_temp'] == date.today()])
+        col3.metric("🚨 Atrasados", atrasados)
+        col4.metric("📅 Para Hoje", hoje)
+    
+    st.divider()
+    st.info("Utilize as abas superiores para gerenciar os dados.")
 
+# --- ABA 2: MEUS CLIENTES (SELEÇÃO POR OPERADOR) ---
 with tabs[1]:
-    st.header("👤 Minha Operação")
-    op_escolhido = st.selectbox("Selecione seu nome:", st.session_state.operadores)
+    st.subheader("Filtro por Operador")
+    op_selecionado = st.selectbox("Selecione seu nome:", ["---"] + st.session_state.operadores)
     
-    # Filtro de clientes do operador
-    meus_clientes = st.session_state.clientes[st.session_state.clientes['Operador'] == op_escolhido]
-    
-    if not meus_clientes.empty:
-        st.write(f"Sua carteira possui **{len(meus_clientes)}** clientes.")
-        # Permitir edição rápida de status e data (Simulado)
-        edited_df = st.data_editor(meus_clientes, use_container_width=True)
-        if st.button("Salvar Alterações"):
-            st.session_state.clientes.update(edited_df)
-            st.toast("Progresso salvo!")
-    else:
-        st.warning("Você não possui clientes atribuídos. Solicite ao Admin para realizar o 'Giro'.")
+    if op_selecionado != "---":
+        meus_clientes = df[df['Operador'] == op_selecionado].copy()
+        if not meus_clientes.empty:
+            st.write(f"Clientes de **{op_selecionado}**:")
+            # Editor de tabela para status e data
+            colunas_visiveis = ['Cliente', 'CNJ', 'Status', 'Data_Retorno']
+            editado = st.data_editor(meus_clientes[colunas_visiveis], use_container_width=True, hide_index=True)
+            
+            if st.button("Salvar Alterações"):
+                for index, row in editado.iterrows():
+                    # Localiza no banco original pelo índice e atualiza
+                    idx_original = meus_clientes.index[index]
+                    st.session_state.clientes.loc[idx_original, ['Status', 'Data_Retorno']] = [row['Status'], row['Data_Retorno']]
+                st.success("Dados atualizados!")
+                st.rerun()
+        else:
+            st.warning("Nenhum cliente atribuído a você.")
 
+# --- ABA 3: ADMINISTRAÇÃO ---
 with tabs[2]:
-    st.header("🔐 Painel de Controle")
-    senha = st.text_input("Senha Mestre", type="password")
-    
+    senha = st.text_input("Senha de Acesso", type="password")
     if senha == "admin123":
-        st.success("Modo Gestor Ativado")
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Giro de Carteira")
-            if st.button("🌀 EXECUTAR GIRO AGORA"):
-                girar_carteira()
-                st.rerun()
-        
-        with col2:
-            st.subheader("Equipe")
-            novo_op = st.text_input("Novo Operador")
-            if st.button("Adicionar"):
-                st.session_state.operadores.append(novo_op)
+        # GERENCIAR OPERADORES
+        with st.expander("👥 Gerenciar Equipe (Adicionar/Excluir)"):
+            col_add, col_del = st.columns(2)
+            with col_add:
+                novo_op = st.text_input("Nome do Operador")
+                if st.button("Adicionar à Equipe"):
+                    if novo_op and novo_op not in st.session_state.operadores:
+                        st.session_state.operadores.append(novo_op)
+                        st.rerun()
+            with col_del:
+                op_para_remover = st.selectbox("Excluir Operador:", ["---"] + st.session_state.operadores)
+                if st.button("❌ Remover"):
+                    if op_para_remover != "---":
+                        st.session_state.operadores.remove(op_para_remover)
+                        st.rerun()
+
+        # IMPORTAÇÃO COM DUPLICIDADE
+        with st.expander("📥 Importar Clientes (Evita Duplicados)"):
+            texto = st.text_area("Cole os nomes/processos (um por linha)")
+            if st.button("Processar Importação"):
+                linhas = [l.strip() for l in texto.split('\n') if l.strip()]
+                novos_cont = 0
+                duplicados_cont = 0
+                
+                for l in linhas:
+                    cnj = aplicar_mascara_cnj(l)
+                    nome_limpo = l.replace(cnj, "").strip() if cnj != "Sem Processo" else l
+                    id_unico = normalizar_nome(nome_limpo)
+                    
+                    # Checar duplicidade no banco
+                    if id_unico not in st.session_state.clientes['id'].values:
+                        novo_dado = pd.DataFrame([{
+                            'id': id_unico,
+                            'Cliente': nome_limpo,
+                            'CNJ': cnj,
+                            'Operador': 'Não Atribuído',
+                            'Status': 'Novo',
+                            'Ultimo_Contato': date.today().strftime('%d/%m/%Y'),
+                            'Data_Retorno': date.today().strftime('%d/%m/%Y')
+                        }])
+                        st.session_state.clientes = pd.concat([st.session_state.clientes, novo_dado], ignore_index=True)
+                        novos_cont += 1
+                    else:
+                        duplicados_cont += 1
+                
+                st.success(f"Sucesso: {novos_cont} novos. Duplicados ignorados: {duplicados_cont}")
+
+        # GIRO DE CARTEIRA
+        st.subheader("🌀 Giro de Carteira")
+        if st.button("EXECUTAR GIRO EQUITATIVO"):
+            if not st.session_state.clientes.empty and st.session_state.operadores:
+                df_temp = st.session_state.clientes.sample(frac=1).reset_index(drop=True)
+                ops = st.session_state.operadores
+                for i in range(len(df_temp)):
+                    df_temp.at[i, 'Operador'] = ops[i % len(ops)]
+                st.session_state.clientes = df_temp
+                st.success("Clientes redistribuídos entre todos os operadores!")
                 st.rerun()
 
-        st.divider()
-        st.subheader("📥 Importação Bruta")
-        texto = st.text_area("Cole os dados aqui")
-        if st.button("Importar"):
-            # Lógica de importação simplificada da Missão 02
-            linhas = [l for l in texto.split('\n') if l.strip()]
-            novos = []
-            for l in linhas:
-                cnj = aplicar_mascara_cnj(l)
-                novos.append({'Cliente': l[:20], 'CNJ': cnj, 'Operador': 'Não Atribuído', 
-                              'Status': 'Novo', 'Last_Touch': str(date.today()), 'Retorno': str(date.today())})
-            st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame(novos)], ignore_index=True)
+        if st.button("Limpar Tudo (Reset)"):
+            st.session_state.clientes = pd.DataFrame(columns=['id', 'Cliente', 'CNJ', 'Operador', 'Status', 'Ultimo_Contato', 'Data_Retorno'])
             st.rerun()
 
-st.caption(f"Gestão Pro v4.2 | Desenvolvido para Diego")
+# RODAPÉ
+st.divider()
+st.caption(f"Gestão Pro v4.2 | {date.today().strftime('%d/%m/%Y')}")
