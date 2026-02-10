@@ -1,9 +1,10 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 import re
+import numpy as np
 
-# 1. Configuração e Estado do Sistema (Simulando Banco de Dados)
+# 1. Configuração e Estado
 st.set_page_config(page_title="Gestão Pro v4.2", layout="wide", initial_sidebar_state="collapsed")
 
 if 'clientes' not in st.session_state:
@@ -12,86 +13,113 @@ if 'clientes' not in st.session_state:
 if 'operadores' not in st.session_state:
     st.session_state.operadores = ["Operador Padrão"]
 
-# Funções Auxiliares
+# --- FUNÇÕES CORE ---
+
 def aplicar_mascara_cnj(texto):
     padrao = r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}'
     resultado = re.findall(padrao, texto)
     return resultado[0] if resultado else "0000000-00.0000.0.00.0000"
 
+def girar_carteira():
+    if st.session_state.clientes.empty or len(st.session_state.operadores) == 0:
+        return
+    
+    df = st.session_state.clientes.copy()
+    ops = st.session_state.operadores.copy()
+    
+    # Shuffle (Embaralhamento)
+    df = df.sample(frac=1).reset_index(drop=True)
+    
+    # Distribuição Equitativa
+    n_ops = len(ops)
+    for i in range(len(df)):
+        df.at[i, 'Operador'] = ops[i % n_ops]
+    
+    st.session_state.clientes = df
+    st.success("🔄 Giro de Carteira concluído com sucesso!")
+
+def colorir_tabela(val):
+    hoje = date.today()
+    try:
+        data_ret = datetime.strptime(val, '%Y-%m-%d').date()
+        if data_ret < hoje:
+            return 'background-color: #fee2e2; color: #991b1b' # Vermelho (Atrasado)
+        elif data_ret == hoje:
+            return 'background-color: #fef9c3; color: #854d0e' # Amarelo (Hoje)
+        else:
+            return 'background-color: #dcfce7; color: #166534' # Verde (Agendado)
+    except:
+        return ''
+
 # --- INTERFACE ---
+
 st.title("🚀 Gestão Pro v4.2")
 
 tabs = st.tabs(["📊 Dashboard", "👤 Meus Clientes", "🔐 Admin"])
 
 with tabs[0]:
-    st.header("Resumo Geral")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total de Clientes", len(st.session_state.clientes))
-    col2.metric("Operadores Ativos", len(st.session_state.operadores))
-    col3.metric("Aguardando Giro", len(st.session_state.clientes[st.session_state.clientes['Operador'] == 'Não Atribuído']))
+    st.header("Resumo Estratégico")
     
     if not st.session_state.clientes.empty:
-        st.dataframe(st.session_state.clientes, use_container_width=True)
+        # Cálculo de Inatividade
+        df_view = st.session_state.clientes.copy()
+        # Aplicar estilização visual
+        st.write("### Carteira Geral (Monitoramento de Prazos)")
+        st.dataframe(df_view.style.applymap(colorir_tabela, subset=['Retorno']), use_container_width=True)
     else:
-        st.info("Nenhum dado para exibir. Vá em Admin.")
+        st.info("Nenhum dado disponível. Vá para a aba Admin para importar.")
 
 with tabs[1]:
-    st.header("👤 Minha Carteira")
-    op_escolhido = st.selectbox("Identifique-se:", st.session_state.operadores)
-    meus_dados = st.session_state.clientes[st.session_state.clientes['Operador'] == op_escolhido]
+    st.header("👤 Minha Operação")
+    op_escolhido = st.selectbox("Selecione seu nome:", st.session_state.operadores)
     
-    if not meus_dados.empty:
-        st.table(meus_dados)
+    # Filtro de clientes do operador
+    meus_clientes = st.session_state.clientes[st.session_state.clientes['Operador'] == op_escolhido]
+    
+    if not meus_clientes.empty:
+        st.write(f"Sua carteira possui **{len(meus_clientes)}** clientes.")
+        # Permitir edição rápida de status e data (Simulado)
+        edited_df = st.data_editor(meus_clientes, use_container_width=True)
+        if st.button("Salvar Alterações"):
+            st.session_state.clientes.update(edited_df)
+            st.toast("Progresso salvo!")
     else:
-        st.warning(f"Não há clientes atribuídos para {op_escolhido}.")
+        st.warning("Você não possui clientes atribuídos. Solicite ao Admin para realizar o 'Giro'.")
 
 with tabs[2]:
-    st.header("🔐 Painel de Controle (Admin)")
+    st.header("🔐 Painel de Controle")
     senha = st.text_input("Senha Mestre", type="password")
     
     if senha == "admin123":
-        st.success("Acesso Liberado!")
+        st.success("Modo Gestor Ativado")
         
-        # --- SUB-ABA: GESTÃO DE EQUIPE ---
-        with st.expander("👥 Gerenciar Equipe"):
-            novo_op = st.text_input("Nome do Novo Operador")
-            if st.button("Adicionar Operador"):
-                if novo_op and novo_op not in st.session_state.operadores:
-                    st.session_state.operadores.append(novo_op)
-                    st.toast(f"{novo_op} adicionado!")
-            st.write("Operadores atuais:", st.session_state.operadores)
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Giro de Carteira")
+            if st.button("🌀 EXECUTAR GIRO AGORA"):
+                girar_carteira()
+                st.rerun()
+        
+        with col2:
+            st.subheader("Equipe")
+            novo_op = st.text_input("Novo Operador")
+            if st.button("Adicionar"):
+                st.session_state.operadores.append(novo_op)
+                st.rerun()
 
-        # --- SUB-ABA: IMPORTAÇÃO ---
-        with st.expander("📥 Importar Novos Clientes"):
-            st.write("Cole a lista de nomes e/ou números de processo abaixo:")
-            texto_bruto = st.text_area("Lista de Importação", placeholder="Ex: João Silva 0001234-55.2023.8.11.0001")
-            
-            if st.button("Processar e Adicionar"):
-                linhas = texto_bruto.split('\n')
-                novos_registros = []
-                for linha in linhas:
-                    if linha.strip():
-                        cnj = aplicar_mascara_cnj(linha)
-                        nome = linha.replace(cnj, "").strip() if cnj != "0000000-00.0000.0.00.0000" else linha.strip()
-                        novos_registros.append({
-                            'Cliente': nome,
-                            'CNJ': cnj,
-                            'Operador': 'Não Atribuído',
-                            'Status': 'Novo',
-                            'Last_Touch': datetime.now().strftime('%Y-%m-%d'),
-                            'Retorno': datetime.now().strftime('%Y-%m-%d')
-                        })
-                
-                df_novos = pd.DataFrame(novos_registros)
-                st.session_state.clientes = pd.concat([st.session_state.clientes, df_novos], ignore_index=True)
-                st.success(f"{len(df_novos)} clientes importados com sucesso!")
-
-        if st.button("⚠️ Resetar Tudo"):
-            st.session_state.clientes = pd.DataFrame(columns=['Cliente', 'CNJ', 'Operador', 'Status', 'Last_Touch', 'Retorno'])
+        st.divider()
+        st.subheader("📥 Importação Bruta")
+        texto = st.text_area("Cole os dados aqui")
+        if st.button("Importar"):
+            # Lógica de importação simplificada da Missão 02
+            linhas = [l for l in texto.split('\n') if l.strip()]
+            novos = []
+            for l in linhas:
+                cnj = aplicar_mascara_cnj(l)
+                novos.append({'Cliente': l[:20], 'CNJ': cnj, 'Operador': 'Não Atribuído', 
+                              'Status': 'Novo', 'Last_Touch': str(date.today()), 'Retorno': str(date.today())})
+            st.session_state.clientes = pd.concat([st.session_state.clientes, pd.DataFrame(novos)], ignore_index=True)
             st.rerun()
 
-    elif senha != "":
-        st.error("Senha incorreta.")
-
-st.divider()
-st.caption(f"Gestão Pro v4.2 | Diego Nascimento Lopes")
+st.caption(f"Gestão Pro v4.2 | Desenvolvido para Diego")
